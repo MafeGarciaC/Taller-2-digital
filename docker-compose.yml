@@ -1,0 +1,163 @@
+# PepiCloud · Prototipo del Taller Práctico 2 (Implantación de soluciones de software)
+#
+# Componentes:
+#   frontend               Nginx: sirve las 3 pantallas y reenvía /api al backend
+#   backend                API REST (Python/FastAPI): personas, documentos, copias, respaldo y reparación
+#   postgres               PostgreSQL 17: datos estructurados (sin archivos/BLOB)
+#   almacenamiento-a       LocalStack S3: copia operativa A (activo-activo)
+#   almacenamiento-b       LocalStack S3: copia operativa B (activo-activo)
+#   almacenamiento-respaldo LocalStack S3: backup documental independiente (no es copia activa)
+#   respaldo-bd            Respaldos de PostgreSQL (completo + incrementales) en su propio volumen
+#   restaurador            Solo para la prueba de restauración (perfil "restauracion")
+#
+# Antes del primer arranque hay que generar los secretos (ver README.md).
+
+name: pepicloud
+
+x-localstack: &localstack
+  image: localstack/localstack:4.0.3
+  environment:
+    SERVICES: s3
+    TZ: America/Bogota
+  healthcheck:
+    test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+  restart: unless-stopped
+
+services:
+  postgres:
+    build: ./postgres
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - summarize_wal=on        # necesario para los backups incrementales nativos de PostgreSQL 17
+      - -c
+      - max_wal_senders=5
+    environment:
+      POSTGRES_DB: pepicloud
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_superusuario
+      TZ: America/Bogota
+    secrets:
+      - postgres_superusuario
+      - db_app_password
+      - db_respaldo_password
+    volumes:
+      - datos_bd:/var/lib/postgresql/data
+    networks: [red_datos]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pepicloud"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  almacenamiento-a:
+    <<: *localstack
+    networks: [red_almacenamiento]
+
+  almacenamiento-b:
+    <<: *localstack
+    networks: [red_almacenamiento]
+
+  almacenamiento-respaldo:
+    <<: *localstack
+    networks: [red_respaldo]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DB_HOST: postgres
+      DB_NOMBRE: pepicloud
+      DB_USUARIO: pepicloud_app
+      NODO_A_URL: http://almacenamiento-a:4566
+      NODO_B_URL: http://almacenamiento-b:4566
+      NODO_RESPALDO_URL: http://almacenamiento-respaldo:4566
+      BUCKET_DOCUMENTOS: pepicloud-documentos
+      BUCKET_RESPALDO: pepicloud-respaldo-documentos
+      RETENCION_MINUTOS: "${RETENCION_MINUTOS:-30}"
+      INTERVALO_RESPALDO_DOCUMENTAL_SEG: "${INTERVALO_RESPALDO_DOCUMENTAL_SEG:-300}"
+      INTERVALO_REPARACION_SEG: "60"
+      TZ: America/Bogota
+    secrets:
+      - db_app_password
+      - s3_access_key
+      - s3_secret_key
+      - clave_maestra
+    depends_on:
+      postgres:
+        condition: service_healthy
+      almacenamiento-a:
+        condition: service_started
+      almacenamiento-b:
+        condition: service_started
+      almacenamiento-respaldo:
+        condition: service_started
+    networks: [red_aplicacion, red_datos, red_almacenamiento, red_respaldo]
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${PUERTO_WEB:-8080}:80"     # iniciar.ps1 elige un puerto libre y lo guarda en .env
+    depends_on: [backend]
+    networks: [red_aplicacion]
+    restart: unless-stopped
+
+  respaldo-bd:
+    build: ./respaldo-bd
+    environment:
+      PGHOST: postgres
+      PGUSER: respaldo
+      TZ: America/Bogota
+    secrets:
+      - db_respaldo_password
+    volumes:
+      - respaldos_bd:/respaldos          # ubicación distinta a la de la BD en operación
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [red_datos]
+    restart: unless-stopped
+
+  restaurador:
+    build: ./respaldo-bd
+    profiles: ["restauracion"]
+    entrypoint: ["/usr/local/bin/respaldo.sh"]
+    environment:
+      PGHOST: postgres
+      TZ: America/Bogota
+    volumes:
+      - respaldos_bd:/respaldos:ro
+      - datos_bd:/var/lib/postgresql/data
+    networks: [red_datos]
+
+secrets:
+  postgres_superusuario:
+    file: ./secretos/postgres_superusuario.txt
+  db_app_password:
+    file: ./secretos/db_app_password.txt
+  db_respaldo_password:
+    file: ./secretos/db_respaldo_password.txt
+  s3_access_key:
+    file: ./secretos/s3_access_key.txt
+  s3_secret_key:
+    file: ./secretos/s3_secret_key.txt
+  clave_maestra:
+    file: ./secretos/clave_maestra.txt
+
+volumes:
+  datos_bd:
+  respaldos_bd:
+
+networks:
+  red_aplicacion:
+  red_datos:
+  red_almacenamiento:
+  red_respaldo:

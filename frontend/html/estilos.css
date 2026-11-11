@@ -1,0 +1,52 @@
+:root {
+  --fondo: #f4f6f9; --tarjeta: #ffffff; --tinta: #1d2733; --suave: #5b6775; --linea: #d9e0e8;
+  --azul: #1f4e79; --azul-claro: #e8f0f8; --verde: #2e7d4f; --verde-claro: #e6f4ec;
+  --rojo: #b3261e; --rojo-claro: #fdecea; --ambar: #8a5a00; --ambar-claro: #fff4dc;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--fondo); color: var(--tinta); font-size: 15px; }
+header { background: var(--azul); color: #fff; padding: 12px 24px; display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+header .marca { font-weight: 700; font-size: 18px; }
+header nav a { color: #cfe0f2; text-decoration: none; margin-right: 18px; font-weight: 500; }
+header nav a.activo, header nav a:hover { color: #fff; border-bottom: 2px solid #fff; }
+main { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+h1 { font-size: 22px; margin: 0 0 16px; }
+h2 { font-size: 17px; margin: 0 0 12px; }
+.tarjeta { background: var(--tarjeta); border: 1px solid var(--linea); border-radius: 8px; padding: 18px; margin-bottom: 18px; }
+.rejilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+label { display: block; font-size: 13px; color: var(--suave); margin-bottom: 4px; }
+input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--linea); border-radius: 6px; font: inherit; background: #fff; }
+textarea { min-height: 60px; }
+button, .boton { background: var(--azul); color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+button.secundario, .boton.secundario { background: #fff; color: var(--azul); border: 1px solid var(--azul); }
+button.peligro { background: var(--rojo); }
+button.pequeno { padding: 4px 9px; font-size: 13px; font-weight: 500; }
+button:disabled { opacity: .5; cursor: default; }
+.acciones { display: flex; gap: 6px; flex-wrap: wrap; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; color: var(--suave); font-weight: 600; border-bottom: 2px solid var(--linea); padding: 8px; }
+td { border-bottom: 1px solid var(--linea); padding: 8px; vertical-align: top; }
+.tabla-scroll { overflow-x: auto; }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; margin: 1px 2px 1px 0; }
+.chip.ok { background: var(--verde-claro); color: var(--verde); }
+.chip.mal { background: var(--rojo-claro); color: var(--rojo); }
+.chip.pend { background: var(--ambar-claro); color: var(--ambar); }
+.chip.gris { background: #eceff3; color: var(--suave); }
+.mensaje { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; display: none; white-space: pre-wrap; }
+.mensaje.ok { background: var(--verde-claro); color: var(--verde); display: block; }
+.mensaje.error { background: var(--rojo-claro); color: var(--rojo); display: block; }
+.mensaje.info { background: var(--azul-claro); color: var(--azul); display: block; }
+.suave { color: var(--suave); font-size: 13px; }
+code, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+.nodo { border: 1px solid var(--linea); border-radius: 8px; padding: 14px; background: #fff; }
+.nodo .titulo { font-weight: 700; }
+.nodo.arriba { border-left: 5px solid var(--verde); }
+.nodo.abajo { border-left: 5px solid var(--rojo); background: var(--rojo-claro); }
+.cifra { font-size: 26px; font-weight: 700; color: var(--azul); }
+dialog { border: 0; border-radius: 10px; max-width: 900px; width: 92vw; padding: 0; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+dialog .cab { background: var(--azul); color: #fff; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; }
+dialog .cuerpo { padding: 18px; max-height: 70vh; overflow: auto; }
+pre { background: #0f1720; color: #d7e3ef; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12.5px; white-space: pre-wrap; word-break: break-all; }
+.fila-form { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+.fila-form > div { flex: 1 1 180px; }
+[hidden] { display: none !important; }

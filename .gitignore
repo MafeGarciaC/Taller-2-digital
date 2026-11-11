@@ -1,0 +1,3 @@
+secretos/*
+!secretos/LEEME.txt
+.env

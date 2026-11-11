@@ -1,0 +1,4 @@
+secretos
+**/__pycache__
+*.md
+!documentos_ejemplo/*.md

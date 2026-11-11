@@ -1,0 +1,1 @@
+Aquí van los secretos. Se generan con generar_secretos.sh (Linux/Mac) o generar_secretos.ps1 (Windows). No se suben a git.

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PepiCloud · Estado y pruebas</title>
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<header>
+  <span class="marca">PepiCloud</span>
+  <nav><a href="index.html">Pacientes</a><a href="estado.html" class="activo">Estado y pruebas</a></nav>
+</header>
+<main>
+  <h1>Estado del sistema y pruebas</h1>
+  <div id="msg" class="mensaje"></div>
+
+  <section class="tarjeta">
+    <h2>Componentes</h2>
+    <div class="rejilla" id="nodos"></div>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Resumen</h2>
+    <div class="rejilla" id="cifras"></div>
+    <p class="suave" id="config"></p>
+    <p class="acciones">
+      <button onclick="tarea('respaldo-documental')">Ejecutar backup documental ahora</button>
+      <button class="secundario" onclick="tarea('reparar')">Revisar y reparar copias ahora</button>
+    </p>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Bitácora del sistema</h2>
+    <div class="tabla-scroll">
+      <table><thead><tr><th>Fecha</th><th>Evento</th><th>Detalle</th></tr></thead><tbody id="eventos"></tbody></table>
+    </div>
+  </section>
+</main>
+<script src="comun.js"></script>
+<script>
+const NOMBRES = {
+  "nodo-a": ["Almacenamiento A", "Copia operativa (activo-activo)", "almacenamiento-a"],
+  "nodo-b": ["Almacenamiento B", "Copia operativa (activo-activo)", "almacenamiento-b"],
+  "respaldo": ["Backup documental", "Copia independiente (no activa)", "almacenamiento-respaldo"],
+};
+
+async function cargar() {
+  let e;
+  try { e = await api("/api/estado"); }
+  catch (err) { mostrar("msg", "El backend no responde todavía (si acaba de encender, espere 30 segundos). Detalle: " + err.message.slice(0, 200), "error"); return; }
+  const msg = document.getElementById("msg");
+  if (e.error) mostrar("msg", e.error, "error"); else if (msg.classList.contains("error")) msg.className = "mensaje";
+  const tarjeta = (ok, titulo, sub, cont) => `<div class="nodo ${ok ? "arriba" : "abajo"}">
+      <div class="titulo">${titulo}</div><div class="suave">${sub}</div>
+      <div style="margin-top:6px">${ok ? '<span class="chip ok">en línea</span>' : '<span class="chip mal">no disponible</span>'}</div>
+      <div class="mono suave" style="margin-top:6px">${cont}</div></div>`;
+  document.getElementById("nodos").innerHTML =
+    tarjeta(e.base_datos, "PostgreSQL", "Datos estructurados", "postgres") +
+    Object.entries(NOMBRES).map(([k, [t, s, c]]) => tarjeta(e.nodos[k], t, s, c)).join("");
+  const c = e.copias_ok || {};
+  const cifra = (n, t) => `<div><div class="cifra">${n ?? "—"}</div><div class="suave">${t}</div></div>`;
+  document.getElementById("cifras").innerHTML =
+    cifra(e.personas, "personas") + cifra(e.documentos, "documentos") +
+    cifra(c["nodo-a"] ?? 0, "copias sanas en A") + cifra(c["nodo-b"] ?? 0, "copias sanas en B") +
+    cifra(c["respaldo"] ?? 0, "documentos con backup");
+  document.getElementById("config").textContent =
+    `Inmutabilidad: ${e.retencion_minutos} min · backup documental cada ${e.intervalo_respaldo_seg / 60} min · revisión de copias cada ${e.intervalo_reparacion_seg} s`;
+  try {
+    const ev = await api("/api/eventos?limite=80");
+    document.getElementById("eventos").innerHTML = ev.map(x =>
+      `<tr><td class="suave" style="white-space:nowrap">${fechaHora(x.fecha)}</td><td><span class="chip gris">${esc(x.tipo)}</span></td><td>${esc(x.detalle)}</td></tr>`).join("");
+  } catch (err) { document.getElementById("eventos").innerHTML = `<tr><td colspan="3" class="suave">Bitácora no disponible (¿base de datos caída?)</td></tr>`; }
+}
+
+async function tarea(nombre) {
+  mostrar("msg", "Ejecutando…", "info");
+  try { const r = await api("/api/tareas/" + nombre, { method: "POST" }); mostrar("msg", JSON.stringify(r)); cargar(); }
+  catch (e) { mostrar("msg", e.message, "error"); }
+}
+
+cargar();
+setInterval(cargar, 5000);
+</script>
+</body>
+</html>

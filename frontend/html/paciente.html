@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PepiCloud · Documentos del paciente</title>
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<header>
+  <span class="marca">PepiCloud</span>
+  <nav><a href="index.html">Pacientes</a><a href="estado.html">Estado y pruebas</a></nav>
+</header>
+<main>
+  <p><a href="index.html">← Volver a pacientes</a></p>
+  <h1 id="nombre">Paciente</h1>
+  <p class="suave" id="datos"></p>
+  <div id="msg" class="mensaje"></div>
+
+  <section class="tarjeta">
+    <h2>Cargar documento médico</h2>
+    <form id="form-doc">
+      <div class="rejilla">
+        <div><label>Tipo de documento *</label><select name="tipo_documento_id" id="tipos" required></select></div>
+        <div><label>Título *</label><input name="titulo" required maxlength="200" placeholder="Ej.: Hemograma de control"></div>
+        <div><label>Fecha del documento</label><input name="fecha_documento" type="date"></div>
+        <div><label>Archivo (PDF, imagen…) *</label><input name="archivo" type="file" required></div>
+      </div>
+      <div style="margin-top:10px"><label>Descripción</label><textarea name="descripcion" maxlength="1000"></textarea></div>
+      <p style="margin-top:12px"><button type="submit" id="btn-subir">Cifrar y guardar en las 2 copias</button></p>
+    </form>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Documentos</h2>
+    <p class="suave">Cada documento tiene 2 copias operativas activo-activo (nodo A y nodo B) y un backup documental independiente. "Protegido" indica el tiempo de inmutabilidad (Object Lock) que falta.</p>
+    <div class="tabla-scroll">
+      <table>
+        <thead><tr><th>Documento</th><th>Archivo</th><th>Copias</th><th>Inmutabilidad</th><th>Acciones</th></tr></thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<dialog id="dialogo">
+  <div class="cab"><strong id="dlg-titulo"></strong><button class="pequeno secundario" onclick="dialogo.close()">Cerrar</button></div>
+  <div class="cuerpo" id="dlg-cuerpo"></div>
+</dialog>
+
+<script src="comun.js"></script>
+<script>
+const personaId = new URLSearchParams(location.search).get("id");
+const dialogo = document.getElementById("dialogo");
+let documentos = [];
+
+async function cargarPersona() {
+  const p = await api("/api/personas/" + personaId);
+  document.getElementById("nombre").textContent = `${p.nombres} ${p.apellidos}`;
+  document.getElementById("datos").textContent =
+    `${p.tipo_identificacion} ${p.numero_identificacion} · ID interno ${p.id} · Prefijo en el bucket: pacientes/${p.id}/`;
+  const tipos = await api("/api/tipos-documento");
+  document.getElementById("tipos").innerHTML = tipos.map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join("");
+}
+
+async function cargarDocumentos() {
+  documentos = await api(`/api/personas/${personaId}/documentos`);
+  pintar();
+}
+
+function pintar() {
+  document.getElementById("filas").innerHTML = documentos.length ? documentos.map(d => `
+    <tr>
+      <td><strong>${esc(d.titulo)}</strong><br><span class="suave">${esc(d.tipo)} · ${esc(d.fecha_documento || "")}</span><br>
+          <span class="mono suave">${esc(d.clave_objeto)}</span></td>
+      <td>${esc(d.nombre_archivo)}<br><span class="suave">${tamano(d.tamano_bytes)}</span></td>
+      <td>${chipCopia("Nodo A", d.copias["nodo-a"])}<br>${chipCopia("Nodo B", d.copias["nodo-b"])}<br>${chipCopia("Respaldo", d.copias["respaldo"])}</td>
+      <td>${cuentaRegresiva(d.retencion_hasta)}<br><span class="suave">hasta ${fechaHora(d.retencion_hasta)}</span></td>
+      <td class="acciones">
+        <button class="pequeno" onclick="descargar('${d.id}')">Descargar</button>
+        <button class="pequeno secundario" onclick="descargar('${d.id}','respaldo')">Desde backup</button>
+        <button class="pequeno secundario" onclick="verCopias('${d.id}')">Copias</button>
+        <button class="pequeno secundario" onclick="verCifrado('${d.id}')">Ver cifrado</button>
+        <button class="pequeno secundario" onclick="modificar('${d.id}')">Modificar</button>
+        <button class="pequeno peligro" onclick="eliminar('${d.id}')">Eliminar</button>
+      </td>
+    </tr>`).join("") : `<tr><td colspan="5" class="suave">Este paciente no tiene documentos.</td></tr>`;
+}
+
+async function descargar(id, preferir) {
+  const url = `/api/documentos/${id}/descargar` + (preferir ? `?preferir=${preferir}` : "");
+  const r = await fetch(url);
+  if (!r.ok) { const e = await r.json(); mostrar("msg", e.detail, "error"); return; }
+  const usada = r.headers.get("X-Copia-Usada");
+  const fallos = decodeURIComponent(r.headers.get("X-Fallos-Previos") || "");
+  const blob = await r.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (documentos.find(d => d.id === id) || {}).nombre_archivo || "documento";
+  a.click();
+  mostrar("msg", `Documento descargado desde: ${usada}. Se descifró y su SHA-256 coincide con el original.` +
+    (fallos ? `\nAntes falló: ${fallos}` : ""), fallos ? "info" : "ok");
+}
+
+async function verCopias(id) {
+  const copias = await api(`/api/documentos/${id}/copias`);
+  document.getElementById("dlg-titulo").textContent = "Copias del documento";
+  document.getElementById("dlg-cuerpo").innerHTML = `<table><thead><tr><th>Ubicación</th><th>Servidor</th><th>Objeto</th><th>Object Lock</th></tr></thead><tbody>` +
+    copias.map(c => `<tr>
+      <td><strong>${esc(c.ubicacion)}</strong><br><span class="suave">${esc(c.rol)}</span></td>
+      <td>${c.nodo_disponible ? '<span class="chip ok">en línea</span>' : '<span class="chip mal">caído</span>'}</td>
+      <td>${c.existe === true ? '<span class="chip ok">existe</span>' : c.existe === false ? '<span class="chip mal">no existe</span>' : '<span class="chip gris">—</span>'}
+          <br><span class="mono suave">${esc(c.bucket)}/${esc(c.clave_objeto)}</span><br><span class="mono suave">versión ${esc(c.version_id || "—")}</span></td>
+      <td>${c.retencion ? `${esc(c.retencion.modo)}<br><span class="suave">hasta ${fechaHora(c.retencion.hasta)}</span>` : "—"}</td>
+    </tr>`).join("") + `</tbody></table>`;
+  dialogo.showModal();
+}
+
+async function verCifrado(id) {
+  document.getElementById("dlg-titulo").textContent = "Lo que está guardado en el almacenamiento";
+  let html = "";
+  for (const u of ["nodo-a", "nodo-b"]) {
+    try {
+      const c = await api(`/api/documentos/${id}/crudo?ubicacion=${u}`);
+      html += `<h2>${u} · <span class="mono">${esc(c.bucket)}/${esc(c.clave_objeto)}</span></h2>
+        <p class="suave">Tamaño original ${tamano(c.tamano_original)} · tamaño guardado ${tamano(c.tamano_guardado)} (cabecera + nonce + etiqueta GCM)</p>
+        <p><strong>Primeros bytes como texto:</strong></p><pre>${esc(c.como_texto)}</pre>
+        <p><strong>Primeros bytes en hexadecimal:</strong></p><pre>${esc(c.hex)}</pre>`;
+    } catch (e) { html += `<h2>${u}</h2><p class="mensaje error" style="display:block">${esc(e.message)}</p>`; }
+  }
+  document.getElementById("dlg-cuerpo").innerHTML = html +
+    `<p class="suave">Solo la cabecera es legible; el contenido está cifrado con AES-256-GCM. Sin la clave maestra no se puede leer.</p>`;
+  dialogo.showModal();
+}
+
+async function modificar(id) {
+  try { await api(`/api/documentos/${id}/archivo`, { method: "PUT" }); }
+  catch (e) { mostrar("msg", "Modificación rechazada: " + e.message, "error"); }
+}
+
+async function eliminar(id) {
+  if (!confirm("¿Eliminar este documento?")) return;
+  try { await api(`/api/documentos/${id}`, { method: "DELETE" }); mostrar("msg", "Documento eliminado (retención cumplida)"); cargarDocumentos(); }
+  catch (e) { mostrar("msg", "Eliminación rechazada: " + e.message, "error"); }
+}
+
+document.getElementById("form-doc").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const boton = document.getElementById("btn-subir");
+  boton.disabled = true;
+  try {
+    const r = await api(`/api/personas/${personaId}/documentos`, { method: "POST", body: new FormData(ev.target) });
+    const copias = Object.entries(r.copias).map(([n, ok]) => `${n}: ${ok ? "guardada" : "PENDIENTE"}`).join(" · ");
+    mostrar("msg", `Documento cifrado y guardado. ${copias}\nClave del objeto: ${r.clave_objeto}\nProtegido hasta: ${fechaHora(r.retencion_hasta)}`);
+    ev.target.reset();
+    cargarDocumentos();
+  } catch (e) { mostrar("msg", e.message, "error"); }
+  boton.disabled = false;
+});
+
+cargarPersona().then(cargarDocumentos).catch(e => mostrar("msg", e.message, "error"));
+setInterval(pintar, 1000);           // actualiza la cuenta regresiva
+setInterval(cargarDocumentos, 15000); // y el estado de las copias
+</script>
+</body>
+</html>

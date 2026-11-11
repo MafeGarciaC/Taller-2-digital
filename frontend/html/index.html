@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PepiCloud · Pacientes</title>
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<header>
+  <span class="marca">PepiCloud</span>
+  <nav><a href="index.html" class="activo">Pacientes</a><a href="estado.html">Estado y pruebas</a></nav>
+</header>
+<main>
+  <h1>Pacientes</h1>
+  <div id="msg" class="mensaje"></div>
+
+  <section class="tarjeta">
+    <h2 id="titulo-form">Registrar paciente</h2>
+    <form id="form-persona">
+      <input type="hidden" name="id">
+      <div class="rejilla">
+        <div><label>Tipo de identificación</label>
+          <select name="tipo_identificacion"><option>CC</option><option>TI</option><option>CE</option><option>RC</option><option>PA</option></select></div>
+        <div><label>Número de identificación *</label><input name="numero_identificacion" required minlength="3" maxlength="20"></div>
+        <div><label>Nombres *</label><input name="nombres" required maxlength="100"></div>
+        <div><label>Apellidos *</label><input name="apellidos" required maxlength="100"></div>
+        <div><label>Fecha de nacimiento</label><input name="fecha_nacimiento" type="date"></div>
+        <div><label>Sexo</label><select name="sexo"><option value="">—</option><option value="F">Femenino</option><option value="M">Masculino</option><option value="O">Otro</option></select></div>
+        <div><label>Teléfono</label><input name="telefono" maxlength="30"></div>
+        <div><label>Correo</label><input name="correo" type="email" maxlength="120"></div>
+      </div>
+      <p class="acciones" style="margin-top:14px">
+        <button type="submit" id="btn-guardar">Guardar paciente</button>
+        <button type="button" class="secundario" id="btn-cancelar" hidden>Cancelar edición</button>
+      </p>
+    </form>
+  </section>
+
+  <section class="tarjeta">
+    <div class="fila-form" style="margin-bottom:12px">
+      <div><label>Buscar por identificación, nombres o apellidos</label><input id="buscar" placeholder="Escriba para buscar…"></div>
+      <div style="flex:0 0 auto" class="suave" id="conteo"></div>
+    </div>
+    <div class="tabla-scroll">
+      <table>
+        <thead><tr><th>ID</th><th>Identificación</th><th>Nombre</th><th>Nacimiento</th><th>Contacto</th><th>Documentos</th><th>Acciones</th></tr></thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script src="comun.js"></script>
+<script>
+const form = document.getElementById("form-persona");
+let personas = [];
+
+async function cargar() {
+  const q = document.getElementById("buscar").value;
+  try {
+    personas = await api("/api/personas?buscar=" + encodeURIComponent(q));
+  } catch (e) {
+    mostrar("msg", "No se pudo consultar la base de datos. Si acaba de encender el sistema, espere 30 segundos y recargue (F5). " +
+      "Si sigue, abra la pestaña Estado y pruebas. Detalle: " + e.message.slice(0, 200), "error");
+    return;
+  }
+  document.getElementById("conteo").textContent = personas.length + " paciente(s)";
+  document.getElementById("filas").innerHTML = personas.map(p => `
+    <tr>
+      <td>${p.id}</td>
+      <td>${esc(p.tipo_identificacion)} ${esc(p.numero_identificacion)}</td>
+      <td>${esc(p.nombres)} ${esc(p.apellidos)}</td>
+      <td>${esc(p.fecha_nacimiento || "")}</td>
+      <td class="suave">${esc(p.telefono || "")}<br>${esc(p.correo || "")}</td>
+      <td>${p.documentos}</td>
+      <td class="acciones">
+        <a class="boton pequeno" href="paciente.html?id=${p.id}" style="padding:4px 9px;font-size:13px">Documentos</a>
+        <button class="pequeno secundario" onclick="editar(${p.id})">Editar</button>
+        <button class="pequeno peligro" onclick="borrar(${p.id})">Eliminar</button>
+      </td>
+    </tr>`).join("");
+}
+
+function editar(id) {
+  const p = personas.find(x => x.id === id);
+  for (const campo of form.elements) if (campo.name) campo.value = p[campo.name] ?? "";
+  document.getElementById("titulo-form").textContent = "Editar paciente #" + id;
+  document.getElementById("btn-cancelar").hidden = false;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function limpiar() {
+  form.reset(); form.elements.id.value = "";
+  document.getElementById("titulo-form").textContent = "Registrar paciente";
+  document.getElementById("btn-cancelar").hidden = true;
+}
+
+async function borrar(id) {
+  if (!confirm("¿Eliminar el paciente #" + id + "?")) return;
+  try { await api("/api/personas/" + id, { method: "DELETE" }); mostrar("msg", "Paciente eliminado"); cargar(); }
+  catch (e) { mostrar("msg", e.message, "error"); }
+}
+
+form.addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const datos = Object.fromEntries(new FormData(form));
+  const id = datos.id; delete datos.id;
+  for (const k in datos) if (datos[k] === "") datos[k] = null;
+  datos.tipo_identificacion = datos.tipo_identificacion || "CC";
+  try {
+    await api(id ? "/api/personas/" + id : "/api/personas", {
+      method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos) });
+    mostrar("msg", id ? "Paciente actualizado" : "Paciente registrado");
+    limpiar(); cargar();
+  } catch (e) { mostrar("msg", e.message, "error"); }
+});
+document.getElementById("btn-cancelar").onclick = limpiar;
+document.getElementById("buscar").addEventListener("input", () => { clearTimeout(window._t); window._t = setTimeout(cargar, 250); });
+cargar();
+</script>
+</body>
+</html>
